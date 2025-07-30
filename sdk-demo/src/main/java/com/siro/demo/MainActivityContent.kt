@@ -16,12 +16,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -50,6 +52,7 @@ import com.siro.recorder.database.RecordingEntity
 import com.siro.recorder.database.SyncState
 import com.siro.recorder.models.LoginState
 import com.siro.recorder.models.RecorderState
+import com.siro.recorder.models.RecordingMetadata
 import com.siro.recorder.models.ViewEvent
 import com.siro.recorder.services.RecorderService.Companion.sendViewEvent
 import java.time.Instant
@@ -76,6 +79,7 @@ fun MainActivityContent(
     val preferences = context.getSharedPreferences(PREFS_PATH, Context.MODE_PRIVATE)
     var token by remember { mutableStateOf(preferences.getString(PREFS_TOKEN_KEY, null)) }
     var titleOverride by remember { mutableStateOf("") }
+    var metadata: RecordingMetadata by remember { mutableStateOf(RecordingMetadata()) }
 
     // top level container
     Column(
@@ -164,7 +168,8 @@ fun MainActivityContent(
                 }
 
                 is LoginState.LoggedOut,
-                is LoginState.Error -> {
+                is LoginState.Error,
+                    -> {
                     Text(
                         "Logged Out",
                         modifier = Modifier.stadiumBg(Sentiment.Negative),
@@ -209,19 +214,89 @@ fun MainActivityContent(
                 .border(width = 1.dp, color = Color.LightGray, shape = RoundedCornerShape(16.dp))
                 .padding(16.dp),
         ) {
-            // title entry
-            TextField(
+            var metadataExpanded by remember { mutableStateOf(false) }
+            val caretIconDrawable = if (metadataExpanded) R.drawable.caret_up_24 else R.drawable.caret_down_24
+            Row(
+                horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier
-                    .padding(vertical = 16.dp)
-                    .fillMaxWidth(),
-                value = titleOverride,
-                placeholder = { Text("Set Recording Title") },
-                maxLines = 1,
-                onValueChange = {
-                    titleOverride = it
-                    onViewEvent(ViewEvent.SetRecordingTitle(it))
-                },
-            )
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp)
+                    .clickable {
+                        metadataExpanded = !metadataExpanded
+                    },
+            ) {
+                Text("Attach Metadata")
+                Icon(painter = painterResource(caretIconDrawable), contentDescription = null)
+            }
+
+            if (metadataExpanded) {
+                // title entry
+                TextField(
+                    modifier = Modifier
+                        .padding(vertical = 16.dp)
+                        .fillMaxWidth(),
+                    value = titleOverride,
+                    placeholder = { Text("Set Recording Title") },
+                    maxLines = 1,
+                    onValueChange = {
+                        titleOverride = it
+                        onViewEvent(ViewEvent.SetRecordingTitle(it))
+                    },
+                )
+
+                // crm metadata
+                TextField(
+                    modifier = Modifier
+                        .padding(vertical = 16.dp)
+                        .fillMaxWidth(),
+                    value = metadata.crmObjectId.orEmpty(),
+                    placeholder = { Text("CRM Object ID") },
+                    maxLines = 1,
+                    onValueChange = {
+                        metadata = metadata.copy(crmObjectId = it.takeIf { it.isNotBlank() })
+                        onViewEvent(ViewEvent.SetRecordingMetadata(metadata))
+                    },
+                )
+
+                TextField(
+                    modifier = Modifier
+                        .padding(vertical = 16.dp)
+                        .fillMaxWidth(),
+                    value = metadata.crmObjectType.orEmpty(),
+                    placeholder = { Text("CRM Object Type") },
+                    maxLines = 1,
+                    onValueChange = {
+                        metadata = metadata.copy(crmObjectType = it.takeIf { it.isNotBlank() })
+                        onViewEvent(ViewEvent.SetRecordingMetadata(metadata))
+                    },
+                )
+
+                TextField(
+                    modifier = Modifier
+                        .padding(vertical = 16.dp)
+                        .fillMaxWidth(),
+                    value = metadata.crmTenantId.orEmpty(),
+                    placeholder = { Text("CRM Tenant ID") },
+                    maxLines = 1,
+                    onValueChange = {
+                        metadata = metadata.copy(crmTenantId = it.takeIf { it.isNotBlank() })
+                        onViewEvent(ViewEvent.SetRecordingMetadata(metadata))
+                    },
+                )
+
+                TextField(
+                    modifier = Modifier
+                        .padding(vertical = 16.dp)
+                        .fillMaxWidth(),
+                    value = metadata.crmPlatform.orEmpty(),
+                    placeholder = { Text("CRM Platform") },
+                    maxLines = 1,
+                    onValueChange = {
+                        metadata = metadata.copy(crmPlatform = it.takeIf { it.isNotBlank() })
+                        onViewEvent(ViewEvent.SetRecordingMetadata(metadata))
+                    },
+                )
+            }
 
             // wave form ui
             Row(
@@ -351,7 +426,18 @@ fun MainActivityContent(
                         }
                     },
                     supportingContent = if (expanded) {
-                        { Text(gson.toJson(it)) }
+                        {
+                            Column(modifier.wrapContentHeight()) {
+                                Text(gson.toJson(it))
+                                Button(
+                                    colors = ButtonDefaults.buttonColors().copy(containerColor = Color(0xFFE57373)),
+                                    enabled = true,
+                                    onClick = { sendViewEvent(ViewEvent.DeleteLocalRecording(it)) },
+                                ) {
+                                    Text("Delete")
+                                }
+                            }
+                        }
                     } else null,
                     leadingContent = {
                         Icon(painter = painterResource(caretIconDrawable), contentDescription = null)
@@ -360,7 +446,7 @@ fun MainActivityContent(
                         when (it.syncState) {
                             SyncState.Local,
                             SyncState.ReadyForUpload,
-                            -> Button(
+                                -> Button(
                                 shape = CircleShape,
                                 onClick = { onViewEvent(ViewEvent.UploadRecording(it)) },
                             ) {

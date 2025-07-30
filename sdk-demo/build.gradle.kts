@@ -60,10 +60,10 @@ dependencies {
     // implementation(project(":recorder"))
 
     // >> import from github packages (ie client consumer)
-    implementation("com.siro.recorder:siro-sdk:0.0.23")
+    implementation("com.siro.recorder:siro-sdk:0.0.32")
 
-    // >> local import from with minified build
-    // implementation(files("libs/recorder-prod-release.aar"))
+    // >> local import from with minified build - useful when testing proguard and obfuscation
+    // implementation(files("libs/recorder-release.aar"))
     // implementation(libs.androidx.lifecycle.service)
     // implementation(libs.androidx.room.runtime)
     // implementation(libs.androidx.room.ktx)
