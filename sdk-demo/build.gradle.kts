@@ -57,10 +57,10 @@ android {
 
 dependencies {
     // >> local import for development
-    // implementation(project(":recorder"))
+//     implementation(project(":recorder"))
 
     // >> import from github packages (ie client consumer)
-    implementation("com.siro.recorder:siro-sdk:0.0.32")
+    implementation("com.siro.recorder:siro-sdk:0.0.45")
 
     // >> local import from with minified build - useful when testing proguard and obfuscation
     // implementation(files("libs/recorder-release.aar"))

@@ -1,8 +1,6 @@
 package com.siro.demo
 
 import android.Manifest
-import android.app.Notification
-import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
@@ -23,25 +21,21 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.core.app.ActivityCompat
-import androidx.core.app.NotificationCompat
-import androidx.core.content.ContextCompat
-import com.siro.recorder.database.RecordingEntity
+import androidx.lifecycle.lifecycleScope
+import com.siro.recorder.analytics.EventType
 import com.siro.recorder.models.LoginState
 import com.siro.recorder.models.RecorderState
 import com.siro.recorder.models.RecordingStatus
 import com.siro.recorder.models.ViewEvent
-import com.siro.recorder.notification.NotificationProvider
-import com.siro.recorder.notification.RecorderPendingIntentProvider
-import com.siro.recorder.notification.UploadNotificationSettings
-import com.siro.recorder.services.BuildVariant
+import com.siro.recorder.services.RecorderService
 import com.siro.recorder.services.RecorderService.Companion.getRecordings
 import com.siro.recorder.services.RecorderService.Companion.loginState
 import com.siro.recorder.services.RecorderService.Companion.recorderEvents
 import com.siro.recorder.services.RecorderService.Companion.sendViewEvent
-import com.siro.recorder.services.RecorderService.Companion.startRecorderService
-import com.siro.recorder.services.Settings
-import com.siro.recorder.services.UploadSettings
+import com.siro.recorder.services.RecorderService.Companion.startRecorderServiceWithResult
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.launch
 
 @RequiresApi(Build.VERSION_CODES.O)
 class MainActivity : ComponentActivity() {
@@ -56,87 +50,91 @@ class MainActivity : ComponentActivity() {
     private val token
         get() = prefs.getString(PREFS_TOKEN_KEY, null)
 
-    private val requestPermissionLauncher =
+    private var consentGranted = false
+
+    private val initPermissionsLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { data ->
+        if (data.values.all { it }) {
+            lifecycleScope.launch {
+                startRecorderServiceWithResult(
+                    context = this@MainActivity,
+                    token = token.orEmpty(),
+//                    settings = Settings(
+//                        buildVariant = BuildVariant.Staging,
+//                        uploadSettings = UploadSettings.Always,
+//                        developerSettings = DeveloperSettings(shutdownWhenIdle = false),
+//                        // how to customize notifications
+//                    notificationProvider = object : NotificationProvider {
+//                        override fun createRecorderNotification(
+//                            notificationBuilder: NotificationCompat.Builder,
+//                            recorderState: RecorderState,
+//                            recorderPendingIntentProvider: RecorderPendingIntentProvider,
+//                        ): Notification = notificationBuilder
+//                            .setContentTitle(
+//                                if (!consentGranted) {
+//                                    "Consent Required to Record"
+//                                } else {
+//                                    "Custom Recorder Notification"
+//                                },
+//                            )
+//                            .setSmallIcon(R.drawable.baseline_mic_24)
+//                            .setOngoing(true)
+//                            .setAutoCancel(false)
+//                            .setSilent(true)
+//                            .build()
+//
+//                        override fun uploadNotificationSettings(recordingEntity: RecordingEntity): UploadNotificationSettings =
+//                            UploadNotificationSettings(
+//                                icon = R.drawable.ic_launcher_foreground,
+//                                uploadQueuedDesc = recordingEntity.title,
+//                                uploadInProgressDesc = recordingEntity.title,
+//                                uploadSuccessDesc = recordingEntity.title,
+//                                uploadFailedDesc = recordingEntity.title,
+//                            )
+//                    },
+                )
+            }
+        } else {
+            Toast.makeText(this, "Missing permissions. Please add in settings", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private val recorderPermissionsLauncher =
         registerForActivityResult(
             ActivityResultContracts.RequestMultiplePermissions(),
         ) { data ->
             if (data.values.all { it }) {
-                startRecorderService(context = this, token = token.orEmpty())
+                sendViewEvent(ViewEvent.StartRecorder)
             } else {
                 Toast.makeText(this, "Missing permissions. Please add in settings", Toast.LENGTH_LONG).show()
             }
         }
 
-    // TODO should be mutable state held in view model etc
-    private var consentGranted = false
-
-    private fun startRecorderWithPermissionCheck() {
-        checkNotificationPermission {
-            startRecorderService(
-                context = this,
-                token = token.orEmpty(),
-                settings = Settings(
-                    buildVariant = BuildVariant.Staging,
-                    uploadSettings = UploadSettings.Always,
-                    // how to customize notifications
-                    notificationProvider = object : NotificationProvider {
-                        override fun createRecorderNotification(
-                            notificationBuilder: NotificationCompat.Builder,
-                            recorderState: RecorderState,
-                            recorderPendingIntentProvider: RecorderPendingIntentProvider,
-                        ): Notification = notificationBuilder
-                            .setContentTitle(
-                                if (!consentGranted) {
-                                    "Consent Required to Record"
-                                } else {
-                                    "Custom Recorder Notification"
-                                },
-                            )
-                            .setSmallIcon(R.drawable.baseline_mic_24)
-                            .setOngoing(true)
-                            .setAutoCancel(false)
-                            .setSilent(true)
-                            .build()
-
-                        override fun uploadNotificationSettings(recordingEntity: RecordingEntity): UploadNotificationSettings =
-                            UploadNotificationSettings(
-                                uploadQueuedDesc = recordingEntity.title,
-                                uploadInProgressDesc = recordingEntity.title,
-                                uploadSuccessDesc = recordingEntity.title,
-                                uploadFailedDesc = recordingEntity.title,
-                            )
-                    },
-                ),
-            )
-        }
-    }
-
-    private fun checkNotificationPermission(onGranted: () -> Unit) {
-        val permissions = listOfNotNull(
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) Manifest.permission.POST_NOTIFICATIONS else null,
-            Manifest.permission.RECORD_AUDIO,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) Manifest.permission.READ_PHONE_STATE else null,
-        )
-        when {
-            permissions.all { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED } -> {
-                onGranted()
-            }
-
-            permissions.all { ActivityCompat.shouldShowRequestPermissionRationale(this, it) } -> {
-                Toast.makeText(this, "Missing permissions. Please add in settings", Toast.LENGTH_LONG).show()
-            }
-
-            else -> {
-                requestPermissionLauncher.launch(permissions.toTypedArray())
-            }
-        }
-    }
-
     @RequiresApi(Build.VERSION_CODES.O)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        startRecorderWithPermissionCheck()
+        // start SDK
+        initPermissionsLauncher.launch(
+            listOfNotNull(
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) Manifest.permission.POST_NOTIFICATIONS else null,
+            ).toTypedArray(),
+        )
+
+        // respond to missing recorder permissions
+        lifecycleScope.launch {
+            RecorderService.errorEvents
+                .mapNotNull { it.takeIf { it.type == EventType.RECORDER_PERMISSIONS_MISSING } }
+                .collectLatest {
+                    recorderPermissionsLauncher.launch(
+                        listOfNotNull(
+                            Manifest.permission.RECORD_AUDIO,
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) Manifest.permission.READ_PHONE_STATE else null,
+                        ).toTypedArray(),
+                    )
+                }
+        }
 
         setContent {
             val loginState = loginState.collectAsState(LoginState.Loading)

@@ -432,7 +432,7 @@ fun MainActivityContent(
                                 Button(
                                     colors = ButtonDefaults.buttonColors().copy(containerColor = Color(0xFFE57373)),
                                     enabled = true,
-                                    onClick = { sendViewEvent(ViewEvent.DeleteLocalRecording(it)) },
+                                    onClick = { sendViewEvent(ViewEvent.DeleteRecording(it)) },
                                 ) {
                                     Text("Delete")
                                 }
